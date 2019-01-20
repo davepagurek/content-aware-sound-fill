@@ -6,9 +6,9 @@ import numpy as np
 from collections import Counter
 import math
 
-UP = (0, 1)
+UP = (0, -1)
 LEFT = (-1, 0)
-DOWN = (0, -1)
+DOWN = (0, 1)
 RIGHT = (1, 0)
 DIRS = [UP, DOWN, LEFT, RIGHT]
 
@@ -24,6 +24,9 @@ class WFC:
         self.remaining_set = set(ignore)
         self.filled = []
         self.result = np.copy(img)
+        for x, y in ignore:
+            for channel in range(3):
+                self.result[y][x][channel] = 0
 
         ignore_set = set(ignore)
 
@@ -71,7 +74,7 @@ class WFC:
         while len(self.remaining_set) > 0:
             print(f"{len(self.remaining_set)} remaining")
             self.collapse_one()
-            if len(self.remaining_set) % 20 == 0:
+            if len(self.remaining_set) % 100 == 0:
                 print(len(self.remaining_set))
                 plt.imshow(self.result)
                 plt.show()
@@ -80,21 +83,23 @@ class WFC:
         return self.result
 
     def collapse_one(self):
-        pixel = min(remaining_entropy, key=remaining_entropy.get)
+        pixel = min(self.remaining_entropy, key=self.remaining_entropy.get)
 
         self.remaining_set.remove(pixel)
-        self.remaining_entropy.remove(pixel)
-        self.filled.push(pixel)
+        self.remaining_entropy.pop(pixel)
+        self.filled.append(pixel)
 
         options = self.options(pixel)
 
         if len(options) > 0:
             distribution = [ self.probabilities[option] for option in options ]
-            collapsed = np.random.choice(options, p=distribution)
+            total = sum(distribution)
+            distribution = np.multiply(distribution, 1/total)
+            collapsed = options[np.random.choice(range(len(options)), p=distribution)]
             print(f"Collapsed {pixel} to value {collapsed}")
             for channel in range(3):
-                result[pixel[1]][pixel[0]][channel] = collapsed[channel]
-            result[pixel[1]][pixel[0]][3] = 1
+                self.result[pixel[1]][pixel[0]][channel] = collapsed[channel]
+            self.result[pixel[1]][pixel[0]][3] = 1
 
             self.update_entropies_around(pixel)
         else:
@@ -108,12 +113,15 @@ class WFC:
                 continue
             if x + off_x < 0 or x + off_x >= self.result.shape[1]:
                 continue
-
             neighbour = (x + off_x, y + off_y)
-            self.remaining_entropy[neighbour] = self.entropy(neighbour)
+            if neighbour in self.remaining_entropy:
+                self.remaining_entropy[neighbour] = self.entropy(neighbour)
 
     def entropy(self, pixel):
         options = self.options(pixel)
+
+        if len(options) == 0:
+            return math.inf
 
         total_weight = 0
         total_weighted_logs = 0
@@ -125,10 +133,12 @@ class WFC:
         return math.log2(total_weight) - (total_weighted_logs / total_weight)
 
     def options(self, pixel):
-        print(f"Filtering {len(self.probabilities)} options for pixel {pixel}")
-        return [ value for value in self.probabilities.keys() if self.is_option(pixel, value) ]
+        o = [ value for value in self.probabilities.keys() if self.is_option(pixel, value) ]
+        return o
 
     def is_option(self, pixel, value):
+        num_ok = 0
+        x, y = pixel
         for off_x, off_y in DIRS:
             if y + off_y < 0 or y + off_y >= self.result.shape[0]:
                 continue
@@ -143,11 +153,14 @@ class WFC:
             if not self.training_data.check(value, neighbour, (off_x, off_y)):
                 return False
 
-        return True
+            num_ok += 1
+        return num_ok > 0
 
 
 img = mpimg.imread("examples/landscape.png")
+img = np.multiply(np.round(np.multiply(img, 10)), 1/10)
 imgplot = plt.imshow(img)
+plt.show()
 
 to_fill = []
 for x in range(255, 283):

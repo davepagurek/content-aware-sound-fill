@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import pypianoroll as pp
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 from collections import Counter
 import math
-from random import randint
+import random
+import os
 
 UP = (0, -1)
 LEFT = (-1, 0)
@@ -13,7 +15,7 @@ DOWN = (0, 1)
 RIGHT = (1, 0)
 # DIRS = [UP, DOWN, LEFT, RIGHT]
 DIRS = []
-RANGE = 4
+RANGE = 5
 for x in range(-RANGE, RANGE+1):
     for y in range(-RANGE, RANGE+1):
         if x != 0 and y != 0:
@@ -29,23 +31,22 @@ class TrainingData:
 
 class WFC:
     def __init__(self, img, ignore):
-        img = img[:img.shape[1]-(img.shape[1] % TILE_SIZE)][:img.shape[0]-(img.shape[0] % TILE_SIZE)]
+        img = img[:img.shape[0]-(img.shape[0] % TILE_SIZE)][:img.shape[1]-(img.shape[1] % TILE_SIZE)]
         self.remaining_set = set(ignore)
         self.filled = []
         self.result = np.copy(img)
         for x, y in ignore:
             for xoff in range(TILE_SIZE):
                 for yoff in range(TILE_SIZE):
-                    for channel in range(3):
-                        self.result[y+yoff][x+xoff][channel] = 0
+                    self.result[y+yoff][x+xoff] = 0.5
 
         ignore_set = set(ignore)
 
         print("Computing training relationships")
         # Construct set of possible pixel relationships
         data = set()
-        for y in range(RANGE*TILE_SIZE, img.shape[0] - RANGE*TILE_SIZE, TILE_SIZE):
-            for x in range(RANGE*TILE_SIZE, img.shape[1] - RANGE*TILE_SIZE, TILE_SIZE):
+        for y in range(RANGE*TILE_SIZE, img.shape[0] - 2*RANGE*TILE_SIZE, TILE_SIZE):
+            for x in range(RANGE*TILE_SIZE, img.shape[1] - 2*RANGE*TILE_SIZE, TILE_SIZE):
                 for off_x, off_y in DIRS:
                     if (x, y) in ignore_set:
                         continue
@@ -88,8 +89,7 @@ class WFC:
         for yoff in range(TILE_SIZE):
             row = []
             for xoff in range(TILE_SIZE):
-                channels = img[y+yoff][x+xoff]
-                row.append((channels[0], channels[1], channels[2]))
+                row.append(img[y+yoff][x+xoff])
             tile.append(tuple(row))
         
         return tuple(tile)
@@ -101,7 +101,7 @@ class WFC:
             self.collapse_one()
             if len(self.remaining_set) % 100 == 0:
                 print(len(self.remaining_set))
-                plt.imshow(self.result)
+                plt.imshow(self.result, cmap='hot', interpolation='nearest')
                 plt.show()
 
         
@@ -125,13 +125,11 @@ class WFC:
             print(f"Collapsed {pixel} to value {collapsed}")
             for xoff in range(TILE_SIZE):
                 for yoff in range(TILE_SIZE):
-                    for channel in range(3):
-                        self.result[pixel[1]+yoff][pixel[0]+xoff][channel] = collapsed[yoff][xoff][channel]
-                    self.result[pixel[1]+yoff][pixel[0]+xoff][3] = 1
+                    self.result[pixel[1]+yoff][pixel[0]+xoff] = collapsed[yoff][xoff]
 
             self.update_entropies_around(pixel)
         else:
-            # num_to_backtrack = randint(1, len(self.filled))
+            # num_to_backtrack = random.randint(1, len(self.filled))
             distribution = [math.exp(-x/5) for x in range(1, len(self.filled)+1)]
             distribution = np.multiply(distribution, 1/sum(distribution))
             num_to_backtrack = np.random.choice(range(1, len(self.filled)+1), p=distribution)
@@ -142,15 +140,14 @@ class WFC:
             # self.filled = self.filled[:len(self.filled)-num_to_backtrack]
 
             for _ in range(num_to_backtrack):
-                reverted_pixel = self.filled.pop(randint(0, len(self.filled)-1))
+                reverted_pixel = self.filled.pop(random.randint(0, len(self.filled)-1))
                 reverted.append(reverted_pixel)
 
             for reverted_pixel in reverted:
                 x, y = reverted_pixel
                 for xoff in range(TILE_SIZE):
                     for yoff in range(TILE_SIZE):
-                        for channel in range(3):
-                            self.result[y+yoff][x+xoff][channel] = 0
+                        self.result[y+yoff][x+xoff] = 0
                 self.remaining_set.add(reverted_pixel)
                 self.remaining_entropy[reverted_pixel] = self.entropy(reverted_pixel)
 
@@ -158,7 +155,7 @@ class WFC:
                 self.update_entropies_around(reverted_pixel)
 
             print(self.filled)
-            plt.imshow(self.result)
+            plt.imshow(self.result, cmap='hot', interpolation='nearest')
             plt.show()
 
     def update_entropies_around(self, pixel):
@@ -212,20 +209,55 @@ class WFC:
             # num_ok += 1
         return True
 
+def get_data_files():
+    data_files = []
+    for dir_name, _, files in os.walk("/Users/dpagurek/Downloads/lpd_5/lpd_5_cleansed"):
+        for file in files:
+            if file.endswith(".npz"):
+                data_files.append(f"{dir_name}/{file}")
 
-img = mpimg.imread("examples/lines.png")
-img = np.multiply(np.round(np.multiply(img, 1)), 1/1)
-imgplot = plt.imshow(img)
+    random.shuffle(data_files)
+
+    return data_files
+
+def piano_track(data_file):
+    data = pp.load(data_file)
+    index = [track.name for track in data.tracks].index("Piano")
+    raw_track = data.tracks[index].pianoroll
+    step = 5
+    track = np.array([ [ np.sign(np.sum(raw_track[i:i+step, j])) for j in range(128) ] for i in range(0, raw_track.shape[0]-1, step) ])
+
+    return track
+
+
+data_files = get_data_files()
+track = None
+while True:
+    track = np.transpose(piano_track(random.choice(data_files)))
+    if len(track) != 0:
+        break
+
+min_y = min(y for y in range(track.shape[0]) if sum(track[y]) > 0)
+max_y = max(y for y in range(track.shape[0]) if sum(track[y]) > 0)
+track = track[min_y:max_y+1]
+
+print(track.shape)
+
+imgplot = plt.imshow(track, cmap='hot', interpolation='nearest')
 plt.show()
 
+predict_size = 60
+
+start_idx = random.randint(0, track.shape[1] - predict_size)
+
 to_fill = []
-for y in range(0, img.shape[0] - TILE_SIZE, TILE_SIZE):
-    for x in range(0, img.shape[1] - TILE_SIZE, TILE_SIZE):
-        if 255 <= x and x < 283:
+for y in range(0, track.shape[0] - TILE_SIZE, TILE_SIZE):
+    for x in range(0, track.shape[1] - TILE_SIZE, TILE_SIZE):
+        if start_idx <= x and x < start_idx + predict_size:
             to_fill.append((x, y))
-filled = WFC(img, to_fill).fill()
+filled = WFC(track, to_fill).fill()
 
 print("done")
-filledplot = plt.imshow(filled)
+filledplot = plt.imshow(filled, cmap='hot', interpolation='nearest')
 
 plt.show()

@@ -12,10 +12,61 @@ import os
 import argparse
 import math
 from matplotlib import pyplot as plt
+import midi
+import subprocess
+
+p = midi.Pattern(resolution=96/2)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train', dest='train', action='store_true', default=False, help='Train instead of test')
 args = parser.parse_args()
+
+def generate_midi(data, filename):
+    eigth_note = 96//2
+
+    instrument = 27
+
+    pattern = midi.Pattern(resolution=eigth_note)
+    track = midi.Track()
+    track.append(midi.ProgramChangeEvent(tick=0, data=[instrument]))
+    pattern.append(track)
+
+    tempo = 120
+    tempoString = hex(60000000//tempo).replace("0x", "")
+    if len(tempoString) < 6:
+        tempoString = "0" + tempoString
+    tempoData = map(lambda x: int(x, 16), [tempoString[i:i+2] for i in range(0, len(tempoString), 2)])
+    set_tempo_event = midi.SetTempoEvent(tick=0)
+    set_tempo_event.bpm = 120
+    track.append(set_tempo_event)
+
+    last = 0
+    for step in range(data.shape[0] + 1):
+        for note in range(128):
+            last_note_on = (step > 0 and data[step-1, note] == 1)
+            note_on = (step < data.shape[0] and data[step, note] == 1)
+
+            if note_on and not last_note_on:
+                tick = 0
+                if last != step:
+                    tick = (step-last)*eigth_note
+                    last = step
+
+                track.append(midi.NoteOnEvent(tick=tick, velocity=90, pitch=note))
+
+            if not note_on and last_note_on:
+                tick = 0
+                if last != step:
+                    tick = (step-last)*eigth_note
+                    last = step
+
+                track.append(midi.NoteOffEvent(tick=tick, pitch=note))
+
+    track.append(midi.EndOfTrackEvent(tick=eigth_note))
+    midi.write_midifile(f"{filename}.mid", pattern)
+    subprocess.call(["fluidsynth", "-F", f"{filename}.wav", "GeneralUser GS MuseScore v1.442.sf2", f"{filename}.mid"])
+    # subprocess.call(["rm", f"{filename}.mid"])
+    # subprocess.call(["open", f"{filename}.wav"])
 
 def get_data_files():
     data_files = []
@@ -32,7 +83,7 @@ def piano_track(data_file):
     data = pp.load(data_file)
     index = [track.name for track in data.tracks].index("Piano")
     raw_track = data.tracks[index].pianoroll
-    step = 5
+    step = 4
     track = np.array([ [ np.sign(np.sum(raw_track[i:i+step, j])) for j in range(128) ] for i in range(0, raw_track.shape[0]-1, step) ])
 
     return track
@@ -96,7 +147,7 @@ if args.train:
             validation_data=valid_data_generator.generate(),
             validation_steps=100, callbacks=[checkpointer])
 else:
-    model = load_model("./models/model-07.hdf5")
+    model = load_model("./models/model-08.hdf5")
     track = None
 
     predict_size = 60
@@ -178,6 +229,8 @@ else:
         # print(y[0])
         # print(prediction[0])
         # print(sum(prediction[0][-1]))
+
+        generate_midi(data[0], "output")
 
         fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
         ax[0].imshow(np.transpose(track[start_idx:start_idx+num_steps+predict_size+suffix_size]), cmap='hot', interpolation='nearest')

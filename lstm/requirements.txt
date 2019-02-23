@@ -2,3 +2,4 @@ keras
 pypianoroll
 tensorflow
 argparse
+git+https://github.com/mgedmin/python-midi.git@python3

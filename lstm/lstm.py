@@ -24,20 +24,19 @@ args = parser.parse_args()
 def generate_midi(data, filename):
     eigth_note = 96//2
 
-    instrument = 27
+    instrument = 1
+    # 1 - grand piano
+    # 5 - electric piano
+    # 41 - violin
+    # 27 - electric guitar
 
     pattern = midi.Pattern(resolution=eigth_note)
     track = midi.Track()
     track.append(midi.ProgramChangeEvent(tick=0, data=[instrument]))
     pattern.append(track)
 
-    tempo = 120
-    tempoString = hex(60000000//tempo).replace("0x", "")
-    if len(tempoString) < 6:
-        tempoString = "0" + tempoString
-    tempoData = map(lambda x: int(x, 16), [tempoString[i:i+2] for i in range(0, len(tempoString), 2)])
     set_tempo_event = midi.SetTempoEvent(tick=0)
-    set_tempo_event.bpm = 120
+    set_tempo_event.bpm = 200
     track.append(set_tempo_event)
 
     last = 0
@@ -66,7 +65,7 @@ def generate_midi(data, filename):
     midi.write_midifile(f"{filename}.mid", pattern)
     subprocess.call(["fluidsynth", "-F", f"{filename}.wav", "GeneralUser GS MuseScore v1.442.sf2", f"{filename}.mid"])
     # subprocess.call(["rm", f"{filename}.mid"])
-    # subprocess.call(["open", f"{filename}.wav"])
+    subprocess.call(["open", f"{filename}.wav"])
 
 def get_data_files():
     data_files = []
@@ -141,6 +140,15 @@ model.compile(loss='mean_squared_error', optimizer='adam', metrics=['accuracy'])
 
 print(model.summary())
 
+def probability(prediction):
+    bias = -0.005
+    scale = 1.1
+    return max(0, min(1, prediction * scale + bias))
+
+def make_sl(likelihoods, cost):
+    # print(np.prod(np.multiply(likelihoods, math.pow(1e9, 1/len(likelihoods)))) / math.exp(cost))
+    return np.prod(np.multiply(likelihoods, math.pow(1e20, 1/len(likelihoods)))) / math.exp(cost)
+
 if args.train:
     checkpointer = ModelCheckpoint(filepath='./models/model-{epoch:02d}.hdf5', verbose=1)
     model.fit_generator(train_data_generator.generate(), 500, num_epochs,
@@ -152,9 +160,6 @@ else:
 
     predict_size = 60
     suffix_size = 20
-
-    bias = 0
-    scale = 2
 
     while track is None or track.shape[0] <= predict_size + num_steps + suffix_size:
         track = piano_track(random.choice(data_files))
@@ -175,17 +180,16 @@ else:
             prediction = output[0,-1,:]
 
             for note in range(128):
-                probability = min(1, prediction[note] * scale + bias)
-                data[0, i+num_steps, note] = 1 if random.uniform(0, 1) < probability else 0
+                data[0, i+num_steps, note] = 1 if random.uniform(0, 1) < probability(prediction[note]) else 0
 
-            likelihoods.append(np.prod([ probability if data[0, i+num_steps, note] == 1 else 1 - probability for note in range(128) ]))
+            likelihoods.append(np.prod([ probability(prediction[note]) if data[0, i+num_steps, note] == 1 else 1 - probability(prediction[note]) for note in range(128) ]))
 
         verification = model.predict(data[0:1, -num_steps:, :], batch_size=1)
         cost = 0
         for i in range(suffix_size - 1):
             for j in range(128):
                 cost += (verification[0, -i, j] - data[0, -i-1, j])**2
-        sl = np.prod(np.multiply(likelihoods, 1e7)) / math.exp(cost)
+        sl = make_sl(likelihoods, cost)
 
         for _ in range(20):
             distribution = [math.exp(-x/5) for x in range(1, 1+predict_size)]
@@ -200,10 +204,9 @@ else:
                 prediction = output[0,-1,:]
 
                 for note in range(128):
-                    probability = min(1, prediction[note] * scale + bias)
-                    candidate_data[0, i+num_steps, note] = 1 if random.uniform(0, 1) < probability else 0
+                    candidate_data[0, i+num_steps, note] = 1 if random.uniform(0, 1) < probability(prediction[note]) else 0
 
-                candidate_likelihoods.append(np.prod([ probability if candidate_data[0, i+num_steps, note] == 1 else 1 - probability for note in range(128) ]))
+                candidate_likelihoods.append(np.prod([ probability(prediction[note]) if candidate_data[0, i+num_steps, note] == 1 else 1 - probability(prediction[note]) for note in range(128) ]))
 
             verification = model.predict(candidate_data[0:1, -num_steps:, :], batch_size=1)
             candidate_cost = 0
@@ -211,9 +214,9 @@ else:
                 for j in range(128):
                     candidate_cost += (verification[0, -i, j] - candidate_data[0, -i-1, j])**2
 
-            candidate_sl = np.prod(np.multiply(candidate_likelihoods, 1e7)) / math.exp(candidate_cost)
+            candidate_sl = make_sl(candidate_likelihoods, candidate_cost)
 
-            print(f"{sl:.8f} vs {candidate_sl:.8f}")
+            print(f"{sl} vs {candidate_sl}")
             if candidate_sl > sl or random.uniform(0, 1) < candidate_sl / sl:
                 print(f"Updating to: {candidate_cost}")
                 cost = candidate_cost

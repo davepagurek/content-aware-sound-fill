@@ -133,7 +133,7 @@ model.add(LSTM(hidden_size, return_sequences=True))
 if use_dropout:
     model.add(Dropout(0.5))
 model.add(TimeDistributed(Dense(128)))
-model.add(Activation("softmax"))
+# model.add(Activation("softmax"))
 
 optimizer = Adam()
 model.compile(loss='mean_squared_error', optimizer='adam', metrics=['accuracy'])
@@ -141,8 +141,8 @@ model.compile(loss='mean_squared_error', optimizer='adam', metrics=['accuracy'])
 print(model.summary())
 
 def probability(prediction):
-    bias = -0.005
-    scale = 1.1
+    bias = -0.065
+    scale = 1.3
     return max(0, min(1, prediction * scale + bias))
 
 def make_sl(likelihoods, cost):
@@ -155,7 +155,7 @@ if args.train:
             validation_data=valid_data_generator.generate(),
             validation_steps=100, callbacks=[checkpointer])
 else:
-    model = load_model("./models/model-08.hdf5")
+    model = load_model("./models/model-09.hdf5")
     track = None
 
     predict_size = 60

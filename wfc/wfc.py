@@ -17,7 +17,7 @@ for x in range(-RANGE[1], RANGE[1]+1):
     for y in range(-RANGE[0], RANGE[0]+1):
         if x != 0 and y != 0:
             DIRS.append((x, y))
-TILE_SIZE = (4, 2)
+TILE_SIZE = (4, 8)
 
 def generate_midi(data, offset, filename):
     eigth_note = 96//2
@@ -74,14 +74,17 @@ class TrainingData:
 
 class WFC:
     def __init__(self, img, ignore):
+        print(img.shape)
         img = img[:img.shape[0]-(img.shape[0] % TILE_SIZE[0])][:img.shape[1]-(img.shape[1] % TILE_SIZE[1])]
+        print(img.shape)
         self.remaining_set = set(ignore)
         self.filled = []
         self.result = np.copy(img)
         for x, y in ignore:
             for xoff in range(TILE_SIZE[0]):
                 for yoff in range(TILE_SIZE[1]):
-                    self.result[y+yoff][x+xoff] = 0.5
+                    if x+xoff >= 0 and x+xoff < img.shape[1] and y+yoff >= 0 and y+yoff < img.shape[0]:
+                        self.result[y+yoff][x+xoff] = 0.5
 
         ignore_set = set(ignore)
 

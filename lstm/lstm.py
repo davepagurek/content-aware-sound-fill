@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt
 import midi
 import subprocess
 import itertools
+from collections import Counter
 
 p = midi.Pattern(resolution=96/2)
 
@@ -160,6 +161,21 @@ def distances(data):
             d.append(abs(a-b) % 12)
     return d
 
+def times(data):
+    t = []
+    for note in range(data.shape[1]):
+        start = None
+        for step in range(data.shape[0]):
+            if start is None and data[step, note] == 1:
+                start = step
+            elif (not start is None) and data[step, note] == 1:
+                t.append(step - start)
+                start = None
+        if not start is None:
+            t.append(data.shape[0] - start)
+
+    return t
+
 def predict(model, track, samples=20, predict_size=60, suffix_size=20, nonempty=False):
     start_idx = None
     while start_idx is None or (nonempty and sum(distances(track[start_idx+num_steps:start_idx+num_steps+predict_size])) == 0):
@@ -226,6 +242,10 @@ def predict(model, track, samples=20, predict_size=60, suffix_size=20, nonempty=
     filled = (num_steps, num_steps + predict_size)
     return data[0], track[start_idx:start_idx+num_steps+predict_size+suffix_size], filled
 
+def normalize(counter):
+    total = sum(counter.values())
+    return dict([ (k, v/total) for k, v in counter.items() ])
+
 if args.train:
     checkpointer = ModelCheckpoint(filepath='./models/model-{epoch:02d}.hdf5', verbose=1)
     model.fit_generator(train_data_generator.generate(), 500, num_epochs,
@@ -271,6 +291,9 @@ elif args.evaluate_many:
     truth_errors = []
     filled_errors = []
 
+    truth_time_errors = []
+    filled_time_errors = []
+
     while len(truth_errors) < 15:
         track = None
 
@@ -302,10 +325,28 @@ elif args.evaluate_many:
             truth_errors.append(truth_error)
             filled_errors.append(filled_error)
 
+        real_times = normalize(Counter(times(truth[start:end, :])))
+        filled_times = normalize(Counter(times(data[start:end, :])))
+        song_times = normalize(Counter(times(truth[:start, :]) + times(truth[end:, :])))
+
+        truth_time_error = sum([ (real_times.get(i,0)-song_times.get(i,0))**2 for i in set(real_times).union(song_times) ])
+        filled_time_error = sum([ (filled_times.get(i,0)-song_times.get(i,0))**2 for i in set(filled_times).union(song_times) ])
+
+        if (not math.isnan(truth_time_error)) and (not math.isnan(filled_time_error)):
+            truth_time_errors.append(truth_time_error)
+            filled_time_errors.append(filled_time_error)
+
     print("Making boxplot")
     print(truth_errors)
     print(filled_errors)
     plt.boxplot([ truth_errors, filled_errors ], labels=["Truth to song", "Filled to song"])
+    plt.title("LSTM Distribution Errors")
+    plt.show()
+
+    print(truth_time_errors)
+    print(filled_time_errors)
+    plt.boxplot([ truth_time_errors, filled_time_errors ], labels=["Truth to song", "Filled to song"])
+    plt.title("LSTM Time Distribution Errors")
     plt.show()
 
 else:

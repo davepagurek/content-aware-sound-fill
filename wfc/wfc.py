@@ -10,6 +10,7 @@ import random
 import os
 import midi
 import subprocess
+import itertools
 
 DIRS = []
 RANGE = (1, 1)
@@ -18,6 +19,34 @@ for x in range(-RANGE[1], RANGE[1]+1):
         if x != 0 and y != 0:
             DIRS.append((x, y))
 TILE_SIZE = (4, 8)
+
+
+def normalize(counter):
+    total = sum(counter.values())
+    return dict([ (k, v/total) for k, v in counter.items() ])
+
+def distances(data):
+    d = []
+    for step in range(data.shape[0]):
+        sounded = [ note for note in range(data.shape[1]) if data[step, note] == 1 ]
+        for a, b in itertools.combinations(sounded, 2):
+            d.append(abs(a-b) % 12)
+    return d
+
+def times(data):
+    t = []
+    for note in range(data.shape[1]):
+        start = None
+        for step in range(data.shape[0]):
+            if start is None and data[step, note] == 1:
+                start = step
+            elif (not start is None) and data[step, note] == 1:
+                t.append(step - start)
+                start = None
+        if not start is None:
+            t.append(data.shape[0] - start)
+
+    return t
 
 def generate_midi(data, offset, filename):
     eigth_note = 96//2
@@ -273,6 +302,33 @@ def piano_track(data_file):
 
     return track
 
+def make_histograms(truth, data, start, end):
+    real_distances = distances(truth[start:end,:])
+    filled_distances = distances(data[start:end, :])
+    song_distances = distances(truth[:start, :])
+    song_distances = distances(truth[end:, :])
+
+    bins = list(range(13))
+    real_hist, _ = np.histogram(real_distances, bins=bins, density=True)
+    filled_hist, _ = np.histogram(filled_distances, bins=bins, density=True)
+    song_hist, _ = np.histogram(song_distances, bins=bins, density=True)
+
+    truth_error = sum([ (a-b)**2 for a, b in zip(real_hist, song_hist) ])
+    filled_error = sum([ (a-b)**2 for a, b in zip(filled_hist, song_hist) ])
+
+    print("Interval distributions")
+    print(f"[{truth_error}, {filled_error}],")
+
+    real_times = normalize(Counter(times(truth[start:end, :])))
+    filled_times = normalize(Counter(times(data[start:end, :])))
+    song_times = normalize(Counter(times(truth[:start, :]) + times(truth[end:, :])))
+
+    truth_time_error = sum([ (real_times.get(i,0)-song_times.get(i,0))**2 for i in set(real_times).union(song_times) ])
+    filled_time_error = sum([ (filled_times.get(i,0)-song_times.get(i,0))**2 for i in set(filled_times).union(song_times) ])
+
+    print("Duration distributions")
+    print(f"[{truth_time_error}, {filled_time_error}],")
+
 
 data_files = get_data_files()
 track = None
@@ -291,7 +347,7 @@ predict_size = 60
 
 start_idx = random.randint(0, track.shape[1] - predict_size)
 
-imgplot = plt.imshow(track[:, start_idx-100:start_idx+predict_size+20], cmap='hot', interpolation='nearest')
+imgplot = plt.imshow(track[:, start_idx-200:start_idx+predict_size+20], cmap='hot', interpolation='nearest')
 plt.show()
 
 to_fill = []
@@ -310,6 +366,8 @@ filled = WFC(track, to_fill).fill(preview)
 
 print("done")
 
-generate_midi(np.transpose(filled[:, start_idx-100:start_idx+predict_size+20]), min_y, "output")
+make_histograms(np.transpose(track), np.transpose(filled), start_idx, start_idx+predict_size)
+
+# generate_midi(np.transpose(filled[:, start_idx-100:start_idx+predict_size+20]), min_y, "output")
 
 preview(filled)

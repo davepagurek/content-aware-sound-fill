@@ -176,6 +176,53 @@ def times(data):
 
     return t
 
+def transitions(data):
+    seen = dict()
+    for step in range(data.shape[0]-1):
+        state = tuple(sorted(list(set([ note % 12 for note in range(data.shape[1]) if data[step, note] == 1 ]))))
+        next_state = tuple(sorted(list(set([ note % 12 for note in range(data.shape[1]) if data[step+1, note] == 1 ]))))
+
+        if state not in seen:
+            seen[state] = dict()
+
+        if next_state not in seen[state]:
+            seen[state][next_state] = 0
+
+
+        seen[state][next_state] += 1
+
+    probabilities = dict()
+    for state, transitions in seen.items():
+        total = 0
+        for _, count in transitions.items():
+            total += count
+
+        for transition, count in transitions.items():
+            probabilities[state, transition] = count/total
+
+    return probabilities
+
+def combine_transitions(a, b):
+    seen = dict()
+    for transitions in [a, b]:
+        for (state1, state2), p in transitions.items():
+            if state1 not in seen:
+                seen[state1] = dict()
+            if state2 not in seen[state1]:
+                seen[state1][state2] = 0
+            seen[state1][state2] += 1
+
+    probabilities = dict()
+    for state, transitions in seen.items():
+        total = 0
+        for _, count in transitions.items():
+            total += count
+
+        for transition, count in transitions.items():
+            probabilities[state, transition] = count/total
+
+    return probabilities
+
 def predict(model, track, samples=20, predict_size=60, suffix_size=20, nonempty=False):
     start_idx = None
     while start_idx is None or (nonempty and sum(distances(track[start_idx+num_steps:start_idx+num_steps+predict_size])) == 0):
@@ -294,6 +341,9 @@ elif args.evaluate_many:
     truth_time_errors = []
     filled_time_errors = []
 
+    truth_transition_errors = []
+    filled_transition_errors = []
+
     while len(truth_errors) < 15:
         track = None
 
@@ -336,6 +386,17 @@ elif args.evaluate_many:
             truth_time_errors.append(truth_time_error)
             filled_time_errors.append(filled_time_error)
 
+        real_transitions = transitions(truth[start:end, :])
+        filled_transitions = transitions(data[start:end, :])
+        song_transitions = combine_transitions(transitions(truth[:start, :]), transitions(truth[end:, :]))
+
+        truth_transition_error = sum([ (real_transitions.get(i,0)-song_transitions.get(i,0))**2 for i in set(real_transitions).union(song_transitions) ])
+        filled_transition_error = sum([ (filled_transitions.get(i,0)-song_transitions.get(i,0))**2 for i in set(filled_transitions).union(song_transitions) ])
+
+        if (not math.isnan(truth_transition_error)) and (not math.isnan(filled_transition_error)):
+            truth_transition_errors.append(truth_transition_error)
+            filled_transition_errors.append(filled_transition_error)
+
     print("Making boxplot")
     print(truth_errors)
     print(filled_errors)
@@ -347,6 +408,12 @@ elif args.evaluate_many:
     print(filled_time_errors)
     plt.boxplot([ truth_time_errors, filled_time_errors ], labels=["Truth to song", "Filled to song"])
     plt.title("LSTM Time Distribution Errors")
+    plt.show()
+
+    print(truth_transition_errors)
+    print(filled_transition_errors)
+    plt.boxplot([ truth_transition_errors, filled_transition_errors ], labels=["Truth to song", "Filled to song"])
+    plt.title("LSTM Transition Distribution Errors")
     plt.show()
 
 else:

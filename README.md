@@ -65,7 +65,7 @@ Results are from the more successful model, LSTM+WFC.
 
 <h2>Results</h2>
 
-<p>A piano roll can be thought of as a Markov chain, where the notes being sounded at time <em>t</em> is a state of a Markov process. The transitions between states have probabilities corresponding to how often those two states occur next to each other. States can use pitch number mod 12 to be invariant to the octave of the pitch.</p>
+<p>A piano roll can be thought of as a Markov chain, where the notes being sounded at time <em>t</em> are a state of a Markov process. The transitions between states have probabilities corresponding to how often those two states occur next to each other. States can use pitch number mod 12 to be invariant to the octave of the pitch.</p>
 
 <p>The piano roll from the filled region is modelled as one Markov process and the rest of the piano roll is modelled as another. Assuming piano rolls can be thought of as both being products of the same Markov process, the difference between two processes can be used as a proxy for stylistic fit. Markov process transition probabilities from the filled regions in the ground truth, from WFC, and from LSTM+MCMC were compared against the transition probabilities from the Markov process for the surrounding notes.</p>
 
@@ -74,6 +74,6 @@ Results are from the more successful model, LSTM+WFC.
 <ul>
   <li><strong>The LSTM+MCMC model produces a similar median error to the ground truth.</strong></li>
   <li>Neither reaches zero due to noise from the filled region not having many samples.</li>
-  <li>Both learned models have less variance than the ground truth: real human composers are not a perfect Markov processes and can produce "surprising" scores.</li>
+  <li>Both learned models have less variance than the ground truth: real human composers are not perfect Markov processes and can produce "surprising" scores.</li>
   <li>Both have issues continuing obvious structured, repeating patterns.</li>
 </ul>

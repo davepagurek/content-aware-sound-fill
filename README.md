@@ -67,7 +67,7 @@ Results are from the more successful model, LSTM+WFC.
 
 <p>A piano roll can be thought of as a Markov chain, where the notes being sounded at time <em>t</em> is a state of a Markov process. The transitions between states have probabilities corresponding to how often those two states occur next to each other. States can use pitch number mod 12 to be invariant to the octave of the pitch.</p>
 
-<p>The piano roll from the filled region is modelled as one Markov process and the rest of the piano roll is modelled as another. Assuming piano rolls  with each other can be thought of as both being products of the same Markov process, the difference between two processes can be used as a proxy for stylistic fit. Markov process transition probabilities from the filled regions in the ground truth, from WFC, and from LSTM+MCMC were compared against the transition probabilities from the Markov process for the surrounding notes.</p>
+<p>The piano roll from the filled region is modelled as one Markov process and the rest of the piano roll is modelled as another. Assuming piano rolls can be thought of as both being products of the same Markov process, the difference between two processes can be used as a proxy for stylistic fit. Markov process transition probabilities from the filled regions in the ground truth, from WFC, and from LSTM+MCMC were compared against the transition probabilities from the Markov process for the surrounding notes.</p>
 
 <img src="https://user-images.githubusercontent.com/5315059/54867752-474af180-4d5a-11e9-96fb-e9d6aa91403f.png" />
 
